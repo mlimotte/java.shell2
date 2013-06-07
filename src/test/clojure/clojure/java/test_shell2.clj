@@ -153,14 +153,15 @@
           result
             (pipe
               (sh "echo" "sweet home alabama\nno place like home\nmi casa es su casa")
-              (wrap
+              ;(wrap
                 (fn [in out]
                   (with-open [wrt (PrintWriter. out)]
                     (doall
                       (for [line (->> in io/reader line-seq)
                             :when (re-find #"home" line)]
                         (do (swap! state inc)
-                            (.println wrt line)))))))
+                            (.println wrt line))))))
+                ;)
               (sh "wc" "-l"))]
       (is (= 2 @state))
       (is (= "       2\n" (-> result last :out))))

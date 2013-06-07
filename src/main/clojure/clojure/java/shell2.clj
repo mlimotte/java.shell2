@@ -204,6 +204,26 @@
        (symbol? (first form))
        (= (var-get (resolve (first form))) test-value)))
 
+(defn- test-and-close
+  "Periodically (50 ms) test each future; if done, close it's in and out."
+  [futures-and-outs]
+  ; Usually the futures will be realized and their respective streams closed
+  ; in order.  But if one fails, derefing it will allow a trapped Exception
+  ; to escape and flow up the stack.
+  (loop [remaining futures-and-outs]
+    (let [filtered (filter
+                     (fn [[in f out]]
+                       (if (realized? f)
+                         (do (deref f)
+                             (and out (.close out))
+                             (and in (.close in))
+                             false)
+                         true))
+                     remaining)]
+      (when (pos? (count filtered))
+        (Thread/sleep 50)
+        (recur filtered)))))
+
 (defmacro pipe
   [& forms]
   (case (count forms)
@@ -229,8 +249,8 @@
               head-form)
 
           pipe-syms
-            (for [_ (range (dec (count forms)))]
-              {:in (gensym) :out (gensym)})
+            (vec (for [_ (range (dec (count forms)))]
+                   {:in (gensym) :out (gensym)}))
 
           pipe-bindings
             (apply concat
@@ -251,22 +271,25 @@
                  (for [i (range (- (count forms) 2) 0 -1)]
                    `[~(nth future-syms i)
                      (future (~(nth fmiddle (dec i))
-                              ~(-> pipe-syms (nth (dec i)) :in)
-                              ~(-> pipe-syms (nth i) :out)))]))
+                              ~(get-in pipe-syms [(dec i) :in])
+                              ~(get-in pipe-syms [i :out])))]))
               `[~(first future-syms) (future (~fhead ~(-> pipe-syms first :out)))])
 
-          ; Make sure each proc finishes, then close its output stream
-          ; in the correct order (i.e. left-to-right, aka 0-to-n)
+          ; Make sure each proc finishes, then close its streams
+          test-and-close-args
+            (for [i (range 0 (count forms))]
+              [(get-in pipe-syms [(dec i) :in])
+               (nth future-syms i)
+               (get-in pipe-syms [i :out])])
+
           results
-            (apply concat
-              (for [i (range 0 (count forms))]
-                `[(deref ~(nth future-syms i))
-                  (if-let [pout# ~(-> pipe-syms (nth i nil) :out)]
-                    (.close pout#))]))]
+            (for [i (range 0 (count forms))]
+              `(deref ~(nth future-syms i)))]
 
       `(with-open [~@pipe-bindings]
          (let [~@future-bindings]
-           (take-nth 2 [~@results]))))))
+           (#'test-and-close [~@test-and-close-args])
+           [~@results])))))
 
 ; helper - convenience wrapper for functions that participate in pipes
 
