@@ -153,8 +153,7 @@
            - fn - The fn is called with the stdout InputStream as an argument
              (stream is closed automatically). The fn is run in a Thread, but
              sh blocks until the Thread completes. This can be used, for
-             example, to filter the stream or to pipe the output to another sh
-             process.
+             example, to filter the stream.
            Defaults to :capture
   :err     Same as :out
   :in-enc  option may be given followed by a String, used as a character
