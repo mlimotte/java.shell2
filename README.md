@@ -13,40 +13,48 @@ through multiple processes and clojure functions.
 
 #### Running a process
 
+```clojure
 user=> (use 'clojure.java.shell2)
-; input can be a Stream, Reader, File, byte[] or String
-user=> (import 'java.io.StringReader)
+user=> (import 'java.io.StringReader)  ;input can be a Stream, Reader, File, byte[] or String
 user=> (def input (StringReader. "line1\nline2\n"))
+```
 
-; simple example, calling unix sort on some input data
+simple example, calling unix sort on some input data
+```clojure
 user=> (sh "sort" :in input)
 {:err "" :exit 0 :out "line1\nline2\n"}
+```
 
-; More complex example: count the lines of input, pass the stderr to stderr
-; of the JVM, and specify a fn to capture the output and post-process it.
+More complex example: count the lines of input, pass the stderr to stderr
+of the JVM, and specify a fn to capture the output and post-process it.
+```clojure
 user=> (require '[clojure.string :as string])
 user=> (sh "wc" "-l" :in input :err :pass
                      :out #(string/trim (slurp %)))
 {:err nil :exit 0 :out "2"}
 user=> (:out *1)
 "2"
+```
 
 #### Streaming data through process/fns
 
-; A simple example, my-filter-fn would be a a-arg function called with an
-; InputStream to read the output of the previous process and an OutputStream
-; to write results.  Note that the data is streamed through these functions
-; asynchronously.
+A simple example, my-filter-fn would be a a-arg function called with an
+InputStream to read the output of the previous process and an OutputStream
+to write results.  Note that the data is streamed through these functions
+asynchronously.
+```clojure
 (pipe
   (sh "cat" :in input)
   my-filter-fn
   (sh "wc" "-l"))
+```
 
-; Another example, using the convenience wrapper functions.  wrap-text-lines,
-; for example, wraps a function that receives a line-seq as it's only output,
-; and the return value of the fn is used as the output.  The RV is expected
-; to be a seq of lines which are streamed to the outstream separated by the
-; system line separator.
+Another example, using the convenience wrapper functions.  wrap-text-lines,
+for example, wraps a function that receives a line-seq as it's only output,
+and the return value of the fn is used as the output.  The RV is expected
+to be a seq of lines which are streamed to the outstream separated by the
+system line separator.
+```clojure
 (pipe
   (sh "ls" "-l")
   (sh "sed" "p")
@@ -54,11 +62,13 @@ user=> (:out *1)
   (sh "wc" "-l")
   (wrap count :in :line-seq :out :forward)
   (sh "cat"))
+```
 
 ## Usage
 
-Add to leiningen :dependencies
-  [com.climate/java.shell2 "0.1.0"]
+Add to leiningen 
+
+`:dependencies [com.climate/java.shell2 "0.1.0"]`
 
 Processes are started with clojure.java.shell2/sh.  Multiple sh invocations
 and fn calls can be coordinated with clojure.java.shell2/pipe.  Inside the
