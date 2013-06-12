@@ -8,12 +8,13 @@
 
 (ns
   ^{:author "Chris Houser, Stuart Halloway, Marc Limotte",
-    :doc "Use (sh ...) to launch a sub-process."}
+    :doc "Use (sh ...) to launch a sub-process.  Pipe between
+         processes and Clojure functions with (pipe ...)"}
   clojure.java.shell2
-  (:use [clojure.java.io :only (as-file output-stream copy reader writer)]
+  (:use [clojure.java.io :only (as-file copy output-stream reader writer)]
         [clojure.string :only [join]])
-  (:import (java.io ByteArrayOutputStream StringWriter PrintWriter
-                    PipedInputStream PipedOutputStream File)
+  (:import (java.io ByteArrayOutputStream StringWriter StringReader
+                    PrintWriter PipedInputStream PipedOutputStream File)
            (java.nio.charset Charset)))
 
 (def ^:dynamic *sh-dir* nil)
@@ -30,6 +31,12 @@
   "Sets the environment for use with sh, see sh for details."
   [env & forms]
   `(binding [*sh-env* ~env]
+     ~@forms))
+
+(defmacro with-sh-encoding
+  "Sets the encoding for use with sh"
+  [enc & forms]
+  `(binding [*encoding* ~enc]
      ~@forms))
 
 (defn- parse-args
@@ -84,17 +91,11 @@
       (instance? File opt)
         (with-open [os (output-stream opt)]
           (copy strm-in os :encoding enc))
-
-      ; TODO for a two-arg fn, pass in strm-in and an O/S to write to
-      ;  TODO should fn be able to write to stderr O/S?
       (fn? opt)
         (opt strm-in)
-
       ; otherwise, assume it is an OutputStream or Writer
       :else
-        (copy strm-in opt :encoding enc)
-
-      )))
+        (copy strm-in opt :encoding enc))))
 
 (defn- manage-process
   [proc input-future out out-enc err]
@@ -138,10 +139,10 @@
 
   Options are
 
-  :in      may be given followed by any legal input source for
+  :in      May be given followed by any legal input source for
            clojure.java.io/copy, e.g. InputStream, Reader, File, byte[],
            or String, to be fed to the sub-process's stdin.
-  :out     may be given followed by :capture, a File, :pass, :err, or a fn.
+  :out     May be given followed by :capture, a File, :pass, :err, or a fn.
            For...
            - :capture - the sub-process's stdout will be stored in String or
              byte array as specified by :out-enc.
@@ -156,24 +157,24 @@
              example, to filter the stream.
            Defaults to :capture
   :err     Same as :out
-  :in-enc  option may be given followed by a String, used as a character
+  :in-enc  Option may be given followed by a String, used as a character
            encoding name (for example \"UTF-8\" or \"ISO-8859-1\") to
            convert the input string specified by the :in option to the
            sub-process's stdin.  Defaults to UTF-8.
            If the :in option provides a byte array, then the bytes are passed
            unencoded, and this option is ignored.
-  :out-enc option may be given followed by :bytes or a String. If a
+  :out-enc Option may be given followed by :bytes or a String. If a
            String is given, it will be used as a character encoding
            name (for example \"UTF-8\" or \"ISO-8859-1\") to convert
            the sub-process's stdout to a String which is returned.
            If :bytes is given, the sub-process's stdout will be stored
            in a byte array and returned.  Defaults to UTF-8.
-  :env     override the process env with a map (or the underlying Java
+  :env     Override the process env with a map (or the underlying Java
            String[] if you are a masochist).
-  :dir     override the process dir with a String or java.io.File.
+  :dir     Override the process dir with a String or java.io.File.
 
   You can bind :env or :dir for multiple operations using with-sh-env
-  and with-sh-dir.
+  and with-sh-dir. Streaming is managed through buffers.
 
   sh returns a map of
     :exit => sub-process's exit code
@@ -187,6 +188,7 @@
                (as-file (:dir opts)))
         {:keys [in out err in-enc out-enc]} opts
         input-future (future
+                       ; if input is provided, forward it to the proc
                        (if in (with-open [os (.getOutputStream proc)]
                                 (copy in os :encoding in-enc))
                               (.close (.getOutputStream proc))))]
@@ -212,7 +214,7 @@
   (loop [remaining futures-and-outs]
     (let [filtered (filter
                      (fn [[in f out]]
-                       (if (realized? f)
+                       (if (future-done? f)
                          (do (deref f)
                              (and out (.close out))
                              (and in (.close in))
@@ -224,6 +226,21 @@
         (recur filtered)))))
 
 (defmacro pipe
+  "Each form is a (sh ...) form or a fn of two args (fn [in out] ...).
+  Where you can read from in, and write to out. If a fn is first in the
+  pipe, it is 1-arg (fn [out] ...).  If the fn is last, it is 1-arg
+  (fn [in] ...).  See wrap and wrap-text-lines for some convenience
+  functions that allow the use of simpler fns.
+
+  All processes/fns are started in their own threads with data piped
+  from one proc/fn to the next.  The threads will complete when the
+  initial input stream closes and all subsequent procs/fns complete
+  their work.
+
+  Pipe will close all streams that _it_ opens.  Do not try to return or
+  otherwise save the in or out streams given to one of the functions.
+
+  Streaming is managed through buffers, so there may still be a delay."
   [& forms]
   (case (count forms)
     0 [nil]
@@ -292,9 +309,17 @@
 
 ; helper - convenience wrapper for functions that participate in pipes
 
-(defn- join-lines
-  [x]
-  (join (System/getProperty "line.separator") x))
+(def ^:private ^:const eol (System/getProperty "line.separator"))
+
+(defn- stream-seq
+  [input-seq output]
+  (loop [input input-seq]
+    (let [line (first input)]
+      (when line
+        (copy (StringReader. (str line eol)) output)
+        ; flush after every line
+        (.flush output)
+        (recur (rest input))))))
 
 (defmacro close-first
   [[sym expr] & body]
@@ -318,14 +343,14 @@
        :forward       - f is called with no 2nd arg, the return value of f is
                         written to the out stream, as per clojure.core/spit
        :forward-lines - f is called with no 2nd arg. The return value of f
-                        should be Seqable, and each element is written,
-                        separated by the system line.separator, to the out
-                        stream as per clojure.core/spit
+                        should be Seqable, and each element is streamed as a
+                        String, separated by the system line.separator, to out
        :none          - f has no 2nd arg.  This is intended for when f is the
                         tail of a pipe
 
-  NOTE: :forward, :forward-lines and :none will block until all input is
-        received, as they need to capture the return value of the function.
+  NOTE: :forward and :none will block until all input is received, as they
+        need to capture the return value of the function.
+        :forward-lines will stream one line at a time
 
   :rv  :wrap     - (default) Return value of f is wrapped in Map that looks like
                    the RV of sh.  E.g. {:exit 0 :out RV-of-f :err nil}
@@ -352,7 +377,7 @@
             (rvfn nil))
         forward-linesfn
           (fn [rv out]
-            (spit out (join-lines rv))
+            (stream-seq rv out)
             (rvfn nil))]
     (cond
       (and (= in-opt :none) (= out-opt :none))
@@ -426,4 +451,3 @@
 ; see clojure.java.test-shell2 for more examples
 
 )
-

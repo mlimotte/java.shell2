@@ -1,42 +1,76 @@
 # java.shell2
 
-A Clojure library to facilitate launching of sub-processes
+A Clojure library to facilitate launching of sub-processes and piping (streaming) data.
 
+## Features
 
-WIP WIP WIP WIP
-WORK IN PROGRESS
+* A declarative syntax for defining new processes to specify input, output, encoding, and other bevhavior
+* Handling for common use-cases (i.e. pass stdout/err of the process to the same destination as the parent, merge stderr of the process to stdout, output directly to a File, etc)
+* The pipe macro handles all the complexity of managing multipe streams and threads for stremaing data
+through multiple processes and clojure functions.
 
+## Examples
 
-## Usage
+#### Running a process
 
-Add to leiningen :dependencies
-  [???  java.shell2 "0.1.0"]
-
-(require '[clojure.java.shell2 :as sh])
-
-### Use (clojure.java.shell2/sh) to start a process.
-
+user=> (use 'clojure.java.shell2)
+; input can be a Stream, Reader, File, byte[] or String
 user=> (import 'java.io.StringReader)
+user=> (def input (StringReader. "line1\nline2\n"))
+
+; simple example, calling unix sort on some input data
+user=> (sh "sort" :in input)
+{:err "" :exit 0 :out "line1\nline2\n"}
+
+; More complex example: count the lines of input, pass the stderr to stderr
+; of the JVM, and specify a fn to capture the output and post-process it.
 user=> (require '[clojure.string :as string])
-user=> (:out (sh "wc" "-l" :in (StringReader. "line1\nline2\n") :err :pass :out #(string/trim (slurp %))))
+user=> (sh "wc" "-l" :in input :err :pass
+                     :out #(string/trim (slurp %)))
+{:err nil :exit 0 :out "2"}
+user=> (:out *1)
 "2"
 
-### Piping
+#### Streaming data through process/fns
 
-*You can pipe out from a process to a Clojure function and back to a process.*
+; A simple example, my-filter-fn would be a a-arg function called with an
+; InputStream to read the output of the previous process and an OutputStream
+; to write results.  Note that the data is streamed through these functions
+; asynchronously.
+(pipe
+  (sh "cat" :in input)
+  my-filter-fn
+  (sh "wc" "-l"))
 
-##### Example
-
+; Another example, using the convenience wrapper functions.  wrap-text-lines,
+; for example, wraps a function that receives a line-seq as it's only output,
+; and the return value of the fn is used as the output.  The RV is expected
+; to be a seq of lines which are streamed to the outstream separated by the
+; system line separator.
 (pipe
   (sh "ls" "-l")
   (sh "sed" "p")
   (wrap-text-lines #(filter (partial re-find #"project.clj") %))
-  ;(sh "wc" "-l")
+  (sh "wc" "-l")
   (wrap count :in :line-seq :out :forward)
-  (sh "cat")
-  )
+  (sh "cat"))
+
+## Usage
+
+Add to leiningen :dependencies
+  [com.climate/java.shell2 "0.1.0"]
+
+Processes are started with clojure.java.shell2/sh.  Multiple sh invocations
+and fn calls can be coordinated with clojure.java.shell2/pipe.  Inside the
+pipe, fn arguments receive two args [in out].  But you can use the wrapper
+convenience functions (wrap and wrap-text-lines) to change this.
+
+See the docstrings for details.
 
 
+## Compatability
+
+Tested with Clojure 1.2 - 1.5.1
 
 ## License
 

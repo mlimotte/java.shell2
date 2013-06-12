@@ -42,12 +42,6 @@
     ["FOO_SYMBOL=BAR"] (seq (#'sh/as-env-strings {'FOO_SYMBOL "BAR"}))
     ["FOO_KEYWORD=BAR"] (seq (#'sh/as-env-strings {:FOO_KEYWORD "BAR"}))))
 
-(deftest test-join-lines
-  (are [x y] (re-find (re-pattern x) y)
-    "^$" (#'sh/join-lines nil)
-    "^a$" (#'sh/join-lines ["a"])
-    "^a\nb$" (#'sh/join-lines ["a" "b"])))
-
 (let [outputf (File/createTempFile "shell-test-out" nil)
       inputf (doto (File/createTempFile "shell-test-in" nil) (spit "b\na\n"))]
 
