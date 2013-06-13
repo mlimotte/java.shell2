@@ -42,6 +42,13 @@
     ["FOO_SYMBOL=BAR"] (seq (#'sh/as-env-strings {'FOO_SYMBOL "BAR"}))
     ["FOO_KEYWORD=BAR"] (seq (#'sh/as-env-strings {:FOO_KEYWORD "BAR"}))))
 
+(deftest test-form-starts-with-sym?
+  (are [x y] (= x y)
+    false (#'sh/form-starts-with-sym? `(str "hello") sh)
+    nil (#'sh/form-starts-with-sym? `(unknown-sym-sjhgd237 "hello") sh)
+    true (#'sh/form-starts-with-sym? `(sh str "hello") sh)
+    true (#'sh/form-starts-with-sym? `(sh/sh str "hello") sh)))
+
 (let [outputf (File/createTempFile "shell-test-out" nil)
       inputf (doto (File/createTempFile "shell-test-in" nil) (spit "b\na\n"))]
 

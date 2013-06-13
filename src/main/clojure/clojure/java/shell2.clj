@@ -200,10 +200,14 @@
       (manage-process proc input-future out out-enc err))))
 
 (defn- form-starts-with-sym?
+  "The first element of form is tested to see if it is a
+  symbol that resolves to the value test-value. test-value
+  is NOT expected to be a symbol."
   [form test-value]
-  (and (list? form)
+  (and (or (list? form) (seq? form))
        (symbol? (first form))
-       (= (var-get (resolve (first form))) test-value)))
+       (when-let [first-var (resolve (first form))]
+         (= (var-get first-var) test-value))))
 
 (defn- test-and-close
   "Periodically (50 ms) test each future; if done, close it's in and out."
