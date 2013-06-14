@@ -1,4 +1,4 @@
-(defproject java.shell2 "0.1.0"
+(defproject com.climate/java.shell2 "0.1.0"
   :description "Functions for launching processes with shell-like redirection"
   :url "http://example.com/FIXME"
   :license {:name "Eclipse Public License"
