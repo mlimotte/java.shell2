@@ -107,12 +107,20 @@
       @input-future  ;make sure input is done, before checking out/err
       {:exit exit-code :out @out-value :err @err-value})))
 
+;; The java.io.PipedInputStream uses by default a PIPE_SIZE (buffer) of 1 kb.
+;; When processing large data-streams this results in lots of
+;; thread-switching. Therefore we set the PipeSize to 32kb (hard-coded),
+;; which resulted in approx 9x speed improvement on a 88 Mb data-stream.
+;; We will introduced an adjustable parameters only if there is a real need.
+(def PipeSize (* 32 1024))
+
 (defn- manage-process-with-merge
   [proc input-future out out-enc err]
   (with-open [stdout (.getInputStream proc)
               stderr (.getErrorStream proc)
-              pipe-in (PipedInputStream.)
-              pipe-out (PipedOutputStream. pipe-in)]
+              pipe-out (PipedOutputStream.)
+              pipe-in (PipedInputStream. pipe-out PipeSize)
+	      ]
       (let [f-out (future (copy stdout pipe-out))
             f-err (future (copy stderr pipe-out))
             out-value (if (= out :merge)
@@ -275,8 +283,9 @@
           pipe-bindings
             (apply concat
                (for [{:keys [in out]} pipe-syms]
-                 `[~in (PipedInputStream.)
-                   ~out (PipedOutputStream. ~in)]))
+                 `[~out (PipedOutputStream.)
+		   ~in (PipedInputStream. ~out PipeSize)
+		   ]))
 
           future-syms
             (for [_ (range (count forms))]
