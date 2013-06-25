@@ -8,6 +8,7 @@ A Clojure library to facilitate launching of sub-processes and piping (streaming
 * Handling for common use-cases (i.e. pass stdout/err of the process to the same destination as the parent, merge stderr of the process to stdout, output directly to a File, etc)
 * The pipe macro handles all the complexity of managing multipe streams and threads for stremaing data
 through multiple processes and clojure functions.
+* backward compatible with existing code that uses clojure.java.shell (i.e. a drop-in replacement)
 
 ## Examples
 
@@ -66,7 +67,7 @@ system line separator.
 
 ## Usage
 
-Add to leiningen 
+Add to leiningen
 
 `:dependencies [com.climate/java.shell2 "0.1.0"]`
 
@@ -77,10 +78,13 @@ convenience functions (wrap and wrap-text-lines) to change this.
 
 See the docstrings for details.
 
-
 ## Compatability
 
 Tested with Clojure 1.2 - 1.5.1
+
+## Credit
+
+This work is an extension of clojure.java.shell by Chris Houser and Stuart Halloway.
 
 ## License
 

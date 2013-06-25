@@ -6,20 +6,27 @@
 ;   the terms of this license.
 ;   You must not remove this notice, or any other, from this software.
 
-(ns
-  ^{:author "Chris Houser, Stuart Halloway, Marc Limotte",
-    :doc "Use (sh ...) to launch a sub-process.  Pipe between
-         processes and Clojure functions with (pipe ...)"}
-  clojure.java.shell2
-  (:use [clojure.java.io :only (as-file copy output-stream reader writer)]
-        [clojure.string :only [join]])
-  (:import (java.io ByteArrayOutputStream StringWriter StringReader
-                    PrintWriter PipedInputStream PipedOutputStream File)
-           (java.nio.charset Charset)))
+(ns clojure.java.shell2
+  "Use (sh ...) to launch a sub-process.  Pipe between
+  processes and Clojure functions with (pipe ...)"
+  (:use
+    [clojure.java.io :only (as-file copy output-stream reader writer)]
+    [clojure.string :only [join]])
+  (:import
+    [java.io ByteArrayOutputStream StringWriter StringReader
+             PrintWriter PipedInputStream PipedOutputStream File]
+    [java.nio.charset Charset]))
 
 (def ^:dynamic *sh-dir* nil)
 (def ^:dynamic *sh-env* nil)
 (def ^:dynamic *encoding* "UTF-8")
+
+;; The java.io.PipedInputStream uses by default a PIPE_SIZE (buffer) of 1 kb.
+;; When processing large data-streams this results in lots of
+;; thread-switching. Therefore we set the pipe-size to 32kb (hard-coded),
+;; which resulted in approx 9x speed improvement on a 88 Mb data-stream.
+;; We will introduced an adjustable parameters only if there is a real need.
+(def pipe-size (* 32 1024))
 
 (defmacro with-sh-dir
   "Sets the directory for use with sh, see sh for details."
@@ -107,19 +114,12 @@
       @input-future  ;make sure input is done, before checking out/err
       {:exit exit-code :out @out-value :err @err-value})))
 
-;; The java.io.PipedInputStream uses by default a PIPE_SIZE (buffer) of 1 kb.
-;; When processing large data-streams this results in lots of
-;; thread-switching. Therefore we set the PipeSize to 32kb (hard-coded),
-;; which resulted in approx 9x speed improvement on a 88 Mb data-stream.
-;; We will introduced an adjustable parameters only if there is a real need.
-(def PipeSize (* 32 1024))
-
 (defn- manage-process-with-merge
   [proc input-future out out-enc err]
   (with-open [stdout (.getInputStream proc)
               stderr (.getErrorStream proc)
               pipe-out (PipedOutputStream.)
-              pipe-in (PipedInputStream. pipe-out PipeSize)
+              pipe-in (PipedInputStream. pipe-out pipe-size)
 	      ]
       (let [f-out (future (copy stdout pipe-out))
             f-err (future (copy stderr pipe-out))
@@ -284,7 +284,7 @@
             (apply concat
                (for [{:keys [in out]} pipe-syms]
                  `[~out (PipedOutputStream.)
-		   ~in (PipedInputStream. ~out PipeSize)
+		   ~in (PipedInputStream. ~out pipe-size)
 		   ]))
 
           future-syms
