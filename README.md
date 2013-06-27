@@ -86,6 +86,9 @@ Tested with Clojure 1.2 - 1.5.1
 
 This work is an extension of clojure.java.shell by Chris Houser and Stuart Halloway.
 
+clojure.java.shell2 was developed at The Climate Corporation.  Thanks to climate.com for 
+allowing it to be open-sourced.
+
 ## License
 
 Distributed under the Eclipse Public License, the same as Clojure.
